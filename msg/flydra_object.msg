@@ -1,4 +1,4 @@
 uint32 obj_id
-float32[] pos
-float32[] vel
-float32[] posvel_covariance_diagonal
+float32[3] pos
+float32[3] vel
+float32[6] posvel_covariance_diagonal
