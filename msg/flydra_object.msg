@@ -1,4 +1,4 @@
 uint32 obj_id
-float32[3] pos
-float32[3] vel
+geometry_msgs/Point position
+geometry_msgs/Vector3 velocity
 float32[6] posvel_covariance_diagonal

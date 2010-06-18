@@ -7,6 +7,7 @@
   <review status="unreviewed" notes=""/>
   <url>http://flydra.astraw.com</url>
   <depend package="rospy"/>
+  <depend package="geometry_msgs"/>
 </package>
 
 
