@@ -14,8 +14,19 @@ class Flydra_Service_Listener:
         time_prev = time.time()        
         while 1:
             if time.time()-time_prev >= 1:
-                super_packet = self.get_latest_flydra_data()
-                print super_packet
+                superpacket = self.get_latest_flydra_data().packets
+                
+                for packet in superpacket.packets:
+                    print 
+                    print '*'*80
+                    for obj in packet.objects:
+                        position = [obj.position.x, obj.position.y, obj.position.z]
+                        velocity = [obj.velocity.x, obj.velocity.y, obj.velocity.z]
+                        print
+                        print 'obj id: ', obj.obj_id
+                        print position
+                        print velocity
+                    
                 time_prev = time.time() 
 
 if __name__ == '__main__':
