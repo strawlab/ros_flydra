@@ -1,0 +1,5 @@
+uint32 n
+float32 min
+float32 max
+float32 mean
+float32 std
