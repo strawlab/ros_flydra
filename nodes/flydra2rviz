@@ -1,0 +1,145 @@
+#!/usr/bin/env python
+
+import numpy as np
+
+import roslib
+roslib.load_manifest('ros_flydra')
+roslib.load_manifest('visualization_msgs')
+roslib.load_manifest('geometry_msgs')
+import rospy
+
+from visualization_msgs.msg import Marker, MarkerArray
+from geometry_msgs.msg import Point
+from ros_flydra.msg import flydra_mainbrain_super_packet
+
+import collections
+import colorsys
+
+def is_dead(fobj):
+    if np.isnan(fobj.position.x):
+        return True
+    return False
+
+class FlydraViz:
+    def __init__(self):
+        self.pub = rospy.Publisher("~points", Marker)
+        self.sub = rospy.Subscriber("/flydra_mainbrain_super_packets", flydra_mainbrain_super_packet, self._got_msg)
+
+        self.N = 50
+
+        self.tracked = {}
+        self.tracked_text = {}
+        self.lines = {}
+
+
+        hsv_tuples = [(x*1.0/self.N, 0.5, 0.5) for x in range(self.N)]
+        self.rgb_colors = map(lambda x: colorsys.hsv_to_rgb(*x), hsv_tuples)
+        self.col_idx = 0
+        self._closed = False
+        rospy.on_shutdown(self.close)
+
+    def _got_msg(self, data):
+        for packet in data.packets:
+            for fobj in packet.objects:
+                obj_id = fobj.obj_id
+                dead = is_dead(fobj)
+                if obj_id not in self.tracked:
+                    self._begin_showing(fobj)
+                elif not dead:
+                    self._update_showing(fobj)
+                else:
+                    # dead
+                    self._stop_showing(obj_id)
+
+    def close(self):
+        self._closed = True
+        obj_ids = self.tracked.keys()
+        for obj_id in obj_ids:
+            self._stop_showing(obj_id)
+
+    def _begin_showing(self, fobj):
+        if self._closed:
+            return
+        #print "S:%d" % fobj.obj_id
+
+        self.col_idx = (self.col_idx + 1) % self.N
+        r,g,b = self.rgb_colors[self.col_idx]
+
+        marker = Marker ()
+        marker.header.frame_id = "/";
+        marker.header.stamp = rospy.Time.now ()
+        marker.id = fobj.obj_id;
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+        marker.scale.x=0.01
+        marker.scale.y=0.01
+        marker.scale.z=0.01
+        marker.color.a= 1.0
+        marker.color.r = r
+        marker.color.g = g
+        marker.color.b = b
+        marker.pose.position = fobj.position
+        self.tracked[fobj.obj_id] = marker
+        self.pub.publish (marker)
+
+        text_marker = Marker ()
+        text_marker.header.frame_id = "/";
+        text_marker.header.stamp = rospy.Time.now ()
+        text_marker.id = fobj.obj_id;
+        text_marker.type = Marker.TEXT_VIEW_FACING
+        text_marker.action = Marker.ADD
+        text_marker.scale.z = 0.1
+        text_marker.text = str(fobj.obj_id)
+        text_marker.color.a= 1.0
+        text_marker.color.r = r
+        text_marker.color.g = g
+        text_marker.color.b = b
+        text_marker.pose.position = fobj.position
+        self.tracked_text[fobj.obj_id] = text_marker
+        self.pub.publish (text_marker)
+
+        line = Marker ()
+        line.header.frame_id = "/";
+        line.header.stamp = rospy.Time.now ()
+        line.id = -fobj.obj_id;
+        line.type = Marker.LINE_STRIP
+        line.action = Marker.ADD
+        line.scale.x=0.005
+        line.color.a= 1.0
+        line.color.r = r
+        line.color.g = g
+        line.color.b = b
+        line.points = [fobj.position]
+        self.lines[fobj.obj_id] = line
+        self.pub.publish (line)
+
+
+    def _stop_showing(self, fobj_id):
+        #print "X:%d" % fobj_id
+        self.tracked[fobj_id].action = Marker.DELETE
+        self.tracked_text[fobj_id].action = Marker.DELETE
+        self.lines[fobj_id].action = Marker.DELETE
+        self.pub.publish (self.tracked[fobj_id])
+        self.pub.publish (self.tracked_text[fobj_id])
+        self.pub.publish (self.lines[fobj_id])
+        self.tracked.pop(fobj_id)
+        self.tracked_text.pop(fobj_id)
+        self.lines.pop(fobj_id)
+
+
+    def _update_showing(self, fobj):
+        if self._closed:
+            return
+        #print "U:%d" % fobj.obj_id
+        self.tracked[fobj.obj_id].pose.position = fobj.position
+        self.tracked_text[fobj.obj_id].pose.position = fobj.position
+        self.lines[fobj.obj_id].points.append(fobj.position)
+        self.pub.publish (self.tracked[fobj.obj_id])
+        self.pub.publish (self.tracked_text[fobj.obj_id])
+        self.pub.publish (self.lines[fobj.obj_id])
+
+if __name__ == "__main__":
+    rospy.init_node("flydra_tracked_objects")
+    f = FlydraViz()
+    rospy.spin()
+

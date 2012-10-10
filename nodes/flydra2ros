@@ -1,0 +1,221 @@
+#!/usr/bin/env python
+
+import threading
+import numpy as np
+import warnings
+import blist
+import collections
+
+# ROS imports
+import roslib; roslib.load_manifest('strawlab_freeflight_experiments')
+from ros_flydra.msg import flydra_mainbrain_super_packet
+from geometry_msgs.msg import Pose, Quaternion
+from std_msgs.msg import UInt32, Float32
+import rospy
+
+import display_client
+
+IMPOSSIBLE_OBJ_ID = 0
+IMPOSSIBLE_OBJ_ID_ZERO_POSE = 0xFFFFFFFF
+
+class Node(object):
+    def __init__(self):
+        rospy.init_node('flydra2ros')
+        self._estlock = threading.Lock()
+        self._estimates = blist.sorteddict()
+        self._sent = (None, None, None)
+        self._dt = 0.0
+        self.extra_lag_sec = 0.0
+
+        self.timeout = 0.5 # seconds before object is dropped
+        latencies = [
+            ('no_prediction',   'pose'),
+            (0,    'pose_now'),
+            (0.02, 'pose_20_msec' ),
+            ]
+        self.latency_pubs = {}
+        for (latency_sec, topic_name) in latencies:
+            self.latency_pubs[latency_sec] = rospy.Publisher(topic_name, Pose,
+                                                             tcp_nodelay=True)
+
+        self._ori = Quaternion(0,0,0,1) # a valid orientation
+
+        #self.lock = threading.Lock()
+        self._clear_object('initialization')
+        self._timer = rospy.Timer(rospy.Duration(1.0/200.0),
+                                  self._send_updates)
+        rospy.Subscriber("extra_lag_msec",
+                         Float32,
+                         self.on_extra_lag_msec)
+        rospy.Subscriber("flydra_mainbrain_super_packets",
+                         flydra_mainbrain_super_packet,
+                         self.on_flydra_mainbrain_super_packets)
+        rospy.Subscriber("lock_object",
+                         UInt32,
+                         self.on_lock_object)
+
+        self._pub_latency = rospy.Publisher('latency', Float32)
+
+    def _clear_object(self,reason):
+        rospy.loginfo( reason )
+        if 1:
+        #with self.lock:
+            self._current_obj_id = IMPOSSIBLE_OBJ_ID
+            self._current_obj_start_mytime = rospy.get_time()
+            self._current_obj_last_seen_mytime = 0
+            self._current_obj_last_seen_acquire_stamp = None
+            self._current_obj_last_seen_framenumber = 0
+
+    def on_extra_lag_msec(self, msg):
+        rospy.loginfo( 'lag request of %r msec'%msg.data )
+        self.extra_lag_sec = (msg.data)*1e-3
+
+    def on_lock_object(self,msg):
+        rospy.loginfo( 'request to lock obj_id %d'%(msg.data,) )
+
+        if self._current_obj_id == msg.data:
+            # we are already locked onto this object
+            return
+
+        if self._current_obj_id != IMPOSSIBLE_OBJ_ID:
+            rospy.loginfo( 'request to stop lock obj_id %d (to lock %d)'%(self._current_obj_id,msg.data) )
+
+        self._current_obj_id = msg.data
+        self._current_obj_start_mytime = rospy.get_time()
+        self._current_obj_last_seen_mytime = 0
+        self._current_obj_last_seen_acquire_stamp = None
+        self._current_obj_last_seen_framenumber = 0
+
+    def run(self):
+        r = rospy.Rate(10) # 10hz
+        while not rospy.is_shutdown():
+            # check for stale object ID
+            if self._current_obj_id != IMPOSSIBLE_OBJ_ID:
+                now = rospy.get_time()
+                duration_without_new_data = now - self._current_obj_last_seen_mytime
+                if duration_without_new_data > self.timeout:
+                    # data is too old. drop this object.
+                    self._clear_object('timeout on obj_id %d'%self._current_obj_id)
+
+            self._pub_latency.publish(self._dt)
+
+            r.sleep()
+
+    def _set_lagged_estimates(self, now, pos, vel, acquire_stamp ):
+        with self._estlock:
+            self._estimates[ now + self.extra_lag_sec] = \
+                (pos, vel, acquire_stamp.to_sec(), self.extra_lag_sec)
+
+    def _get_lagged_estimates(self, now ):
+        with self._estlock:
+            lagged_estimate_times = np.array(self._estimates.viewkeys())
+            valid_key_cond = lagged_estimate_times <= now
+            valid_key_idx = np.nonzero( valid_key_cond )[0]
+            if len(valid_key_idx):
+                most_recent_idx = valid_key_idx[-1]
+                for i in range(most_recent_idx+1):
+                    key, val = self._estimates.popitem()
+                pos_est, vel_est, acquire_stamp, extra_lag_sec = val
+
+                lagged_stamp = acquire_stamp + extra_lag_sec
+                self._sent = (lagged_stamp, pos_est, vel_est)
+
+        return self._sent
+
+    def _send_updates(self,evt=None):
+        # gets called at 200Hz and when new data comes in
+        if self._current_obj_id == IMPOSSIBLE_OBJ_ID_ZERO_POSE:
+            msg = Pose()
+            msg.orientation = self._ori
+            for latency_sec, pub in self.latency_pubs.iteritems():
+                pub.publish(msg)
+        else:
+            now = rospy.get_time()
+            if 1:
+            #with self.lock:
+                acquire_stamp, pos_est, vel_est = self._get_lagged_estimates( now )
+                if pos_est is None:
+                    # no data yet
+                    return
+
+            if acquire_stamp is not None:
+                self._dt = dt = now - acquire_stamp
+            else:
+                dt = 0.0
+
+            for latency_sec, pub in self.latency_pubs.iteritems():
+                # if pub.get_num_connections()==0:
+                #     continue
+
+                if latency_sec=='no_prediction':
+                    est = pos_est
+                else:
+                    est = pos_est + vel_est*(dt+latency_sec)
+
+                if np.isnan(est[0]):
+                    warnings.warn('nan position hack')
+                    est = 0, 0, 0.5
+
+                msg = Pose()
+                msg.position.x, msg.position.y, msg.position.z = est
+                msg.orientation = self._ori
+                pub.publish(msg)
+
+    def in_volume_of_interest(self,position):
+        return not (((position.z < 0.05) or (position.z > 0.95) ) or ( (position.x**2 + position.y**2) > 0.45**2))
+
+    def on_flydra_mainbrain_super_packets(self,data):
+        now = rospy.get_time()
+        for packet in data.packets:
+            framenumber = packet.framenumber
+            acquire_stamp = packet.acquire_stamp
+            for obj in packet.objects:
+                update = False
+                if self._current_obj_id == IMPOSSIBLE_OBJ_ID:
+                    if self.in_volume_of_interest(obj.position):
+                        # no object: lock on to the next available object
+                        update = True
+                        if 1:
+                        #with self.lock:
+                            self._current_obj_id = obj.obj_id
+                            self._current_obj_start_mytime = now
+                            update = True
+                        rospy.loginfo( 'locked on to obj_id %d'%(obj.obj_id,) )
+                elif self._current_obj_id == IMPOSSIBLE_OBJ_ID_ZERO_POSE:
+                    self._current_obj_last_seen_mytime = now
+                    self._current_obj_last_seen_acquire_stamp = acquire_stamp
+                    self._current_obj_last_seen_framenumber = framenumber
+                    self._send_updates()
+                    update = False
+                elif self._current_obj_id == obj.obj_id:
+                    update = True
+                if update:
+                    if 1:
+                    #with self.lock:
+                        if np.isnan( obj.position.x ):
+                            # signal that object is lost
+                            self._clear_object('object lost (nan position) on obj_id %d'%self._current_obj_id )
+                        elif framenumber > self._current_obj_last_seen_framenumber: # only take most recent data
+
+                            if self._current_obj_last_seen_acquire_stamp is not None:
+                                assert acquire_stamp > self._current_obj_last_seen_acquire_stamp
+
+                            self._current_obj_last_seen_mytime = now
+                            self._current_obj_last_seen_acquire_stamp = acquire_stamp
+                            self._current_obj_last_seen_framenumber = framenumber
+                            pos_est = np.array( (obj.position.x,
+                                                 obj.position.y,
+                                                 obj.position.z))
+                            vel_est = np.array( (obj.velocity.x,
+                                                 obj.velocity.y,
+                                                 obj.velocity.z))
+                            self._set_lagged_estimates(now, pos_est, vel_est, acquire_stamp)
+
+                        self._send_updates() # send upon data receive to minimize lag
+
+if __name__ == '__main__':
+    n = Node()
+    n.run()
+
+
+
