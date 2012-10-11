@@ -1,0 +1,20 @@
+#!/usr/bin/env python
+
+import threading
+
+import flydra.camnode
+
+import roslib; roslib.load_manifest('rospy')
+import rospy
+
+def main():
+    rospy.init_node('flydra_camnode')
+
+    spinthread = threading.Thread(target=rospy.spin)
+    spinthread.start()
+
+    flydra.camnode.main(False,None)
+
+if __name__ == '__main__':
+    main()
+

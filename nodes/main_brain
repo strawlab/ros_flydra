@@ -1,0 +1,212 @@
+#!/usr/bin/env python
+
+import traceback
+import optparse
+import math
+
+import flydra.MainBrain
+
+import numpy as np
+
+import roslib;
+roslib.load_manifest('rospy')
+roslib.load_manifest('sensor_msgs')
+import rospy
+import sensor_msgs.msg
+
+POSE_HZ     = 2.0
+IMAGE_HZ    = 1/20.0
+
+def add_crosshairs_to_nparr(arr, row, col, sz=-1, fill=255, chan=None):
+    ri = arr.shape[0]
+    ci = arr.shape[1]
+    
+    row = np.clip(math.floor(row),0,ri-1)
+    col = np.clip(math.floor(col),0,ci-1)
+    
+    try:
+        if sz < 0:
+            if chan == None:
+                arr[row,0:ci] = fill
+                arr[0:ri,col] = fill
+            else:
+                arr[row,0:ci,chan] = fill
+                arr[0:ri,col,chan] = fill
+        elif sz == 0:
+            if chan == None:
+                arr[row,col] = fill
+            else:
+                arr[row,col,chan] = fill
+        else:
+            if chan == None:
+                arr[max(0,row-sz):min(row+sz,ri),max(0,col-sz):min(col+sz,ci)] = fill
+            else:
+                arr[max(0,row-sz):min(row+sz,ri),max(0,col-sz):min(col+sz,ci),chan] = fill
+    except:
+        print "-----"*5
+        print "ERROR PAINTING ARRAY",row,col,sz,fill,chan,arr.shape
+        traceback.print_exc()
+        print "-----"*5
+
+def numpy_to_imgmsg(image,stamp=None):
+    assert image.ndim == 3
+    rosimage = sensor_msgs.msg.Image()
+    rosimage.height = image.shape[0]
+    rosimage.width = image.shape[1]
+    if image.dtype == np.uint8:
+        rosimage.encoding = '8UC%d' % image.shape[2]
+        rosimage.step = image.shape[2] * rosimage.width
+        rosimage.data = image.ravel().tolist()
+    else:
+        raise Exception("NOT SUPPORTED")
+        #doesnt work
+        #rosimage.encoding = '32FC%d' % image.shape[2]
+        #rosimage.step = rosimage.width * image.shape[2]
+        #rosimage.data = np.array(image.flat,dtype=np.float32).tostring()
+    if stamp is not None:
+        rosimage.header.stamp = stamp
+
+    return rosimage
+
+class MainBrainApp():
+    def __init__(self, *args, **kwargs):
+        self._currently_recording_cams = []
+        self.cameras = {}
+        self.last_sound_time = 0
+
+    def _on_new_camera(self, cam_id, scalar_control_info, fqdnport):
+        print 'new camera: ',cam_id
+        self.cameras[cam_id] = dict(
+            sci=scalar_control_info,
+            publisher=rospy.Publisher("/%s/tracking" % cam_id, sensor_msgs.msg.Image))
+
+    def _on_old_camera(self, cam_id):
+        print "lost camera", cam_id
+        del self.cameras[cam_id]
+
+    def _on_config_change(self):
+        print "config change"
+        if not hasattr(self,"main_brain"):
+            #race when closing
+            return
+
+    def attach_and_start_main_brain(self,main_brain):
+        self.main_brain = main_brain
+        self.main_brain.set_config_change_callback(self._on_config_change)
+        self.main_brain.set_new_camera_callback(self._on_new_camera)
+        self.main_brain.set_old_camera_callback(self._on_old_camera)
+        self.main_brain.start_listening()
+
+    def get_latest_pose(self):
+        if not hasattr(self,'main_brain'):
+            return # quitting
+        self.main_brain.service_pending() # may call OnNewCamera, OnOldCamera, etc
+
+        if not self.main_brain.coord_processor.isAlive():
+            print "ERROR: Coordinate processor thread died"
+
+        realtime_data = flydra.MainBrain.get_best_realtime_data()
+
+        reproj_points = {}
+
+        if realtime_data is not None:
+            Xs,min_mean_dist=realtime_data
+            data3d = Xs[0]
+            print '3D %r err %f' % (data3d, min_mean_dist)
+            if min_mean_dist <= 10.0:
+                r=self.main_brain.reconstructor
+                if r is not None:
+                    recon_cam_ids = r.get_cam_ids()
+                    for cam_id in self.cameras.keys():
+                        if cam_id not in recon_cam_ids:
+                            # no reconstructor data for this cam_id -- skip
+                            continue
+                        pts = []
+                        for X in Xs:
+                            pt=r.find2d(cam_id,X,
+                                        distorted=True)
+                            pts.append( pt )
+
+                        reproj_points[cam_id] = pts
+
+        for cam_id in self.cameras.keys():
+            try:
+                image, show_fps, points, image_coords = self.main_brain.get_last_image_fps(cam_id) # returns None if no new image
+            except KeyError:
+                # may have lost camera since call to service_pending
+                image = None
+
+            if image is not None:
+                sci = self.cameras[cam_id]['sci']
+                img = np.zeros((sci['height'],sci['width'],3),dtype=np.uint8)
+                img[:,:,:] = image.reshape((image.shape[0],image.shape[1],1))
+                for pt in points:
+                    if np.isnan(pt[0]):
+                        continue
+                    add_crosshairs_to_nparr(img,int(pt[1]),int(pt[0]),sz=2,chan=1)
+
+                if cam_id in reproj_points:
+                    for pt in reproj_points[cam_id]:
+                        if np.isnan(pt[0]):
+                            continue
+                        add_crosshairs_to_nparr(img,int(pt[1]),int(pt[0]),sz=2,chan=2)
+
+                self.cameras[cam_id]['publisher'].publish(numpy_to_imgmsg(img))
+
+    def get_latest_images(self):
+        for cam_id in self.cameras.keys():
+            try:
+                self.main_brain.request_image_async(cam_id)
+            except KeyError: # no big deal, camera probably just disconnected
+                pass
+    
+def main():
+    usage = '%prog [options]'
+    parser = optparse.OptionParser(usage)
+    parser.add_option("--server", dest="server", type='string',
+                      help="hostname of mainbrain SERVER",
+                      default='',
+                      metavar="SERVER")
+    parser.add_option("--save-profiling-data",
+                      default=False, action="store_true",
+                      help="save data to profile/debug the Kalman-filter based tracker (WARNING: SLOW)",
+                      )
+    parser.add_option("--disable-sync-errors", dest='show_sync_errors',
+                      default=True, action="store_false",
+                      )
+    (options, args) = parser.parse_args()
+
+    rospy.init_node('flydra_mainbrain')
+
+    app = MainBrainApp(0)
+
+    main_brain = flydra.MainBrain.MainBrain(server=options.server,
+                                     save_profiling_data=options.save_profiling_data,
+                                     show_sync_errors=options.show_sync_errors)
+
+    try:
+        # connect server to GUI
+        app.attach_and_start_main_brain(main_brain)
+        r = rospy.Rate(POSE_HZ)
+        nth = POSE_HZ/IMAGE_HZ
+
+        i = 0
+        while not rospy.is_shutdown():
+            app.get_latest_pose()
+
+            if i == nth:
+                app.get_latest_images()
+                i = 0
+            else:
+                i += 1
+
+            r.sleep()
+
+        print 'mainloop over'
+        del app
+        
+    finally:
+        main_brain.quit()
+    
+if __name__ == '__main__':
+    main()
