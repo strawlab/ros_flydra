@@ -90,7 +90,7 @@ class Node(object):
         r = rospy.Rate(10) # 10hz
         while not rospy.is_shutdown():
             # check for stale object ID
-            if self._current_obj_id != IMPOSSIBLE_OBJ_ID:
+            if self._current_obj_id not in (IMPOSSIBLE_OBJ_ID,IMPOSSIBLE_OBJ_ID_ZERO_POSE):
                 now = rospy.get_time()
                 duration_without_new_data = now - self._current_obj_last_seen_mytime
                 if duration_without_new_data > self.timeout:
