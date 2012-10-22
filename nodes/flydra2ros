@@ -1,4 +1,9 @@
 #!/usr/bin/env python
+"""translate /flydra_mainbrain_super_packets into pose messages
+
+The nature of the translation is controlled by various state variables
+that can be set with messages on /lock_object.
+"""
 
 import threading
 import numpy as np
