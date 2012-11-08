@@ -1,0 +1,70 @@
+#!/usr/bin/env python
+import ode
+import numpy as np
+
+import roslib; roslib.load_manifest('ros_flydra')
+import rospy
+
+from ros_flydra.msg import flydra_mainbrain_super_packet, flydra_mainbrain_packet, flydra_object
+from geometry_msgs.msg import Point
+from sensor_msgs.msg import Joy
+
+FPS=100.0
+
+class JoyPacket:
+    def __init__(self):
+        rospy.init_node('joypacket')
+        self.pub = rospy.Publisher('flydra_mainbrain_super_packets', flydra_mainbrain_super_packet)
+
+        self.jx = self.jy = self.jz = 0.0
+        self.px = self.py = self.pz = 0.0
+
+        self.last_time = rospy.get_time()
+        self.framenumber = int(self.last_time)
+        self.pnow = Point()
+        self.plast = Point()
+        self.id = 1
+
+        rospy.Subscriber("joy", Joy, self.on_joy)
+        rospy.Timer(rospy.Duration(1.0/FPS), self.on_timer)
+
+    def on_joy(self,msg):
+        self.jx, self.jy,_,self.jz = msg.axes[:4]
+        if msg.buttons[14]: # X
+            self.id += 1
+
+    def gain_func(self, in_val):
+        return 1.5e-1*in_val
+
+    def on_timer(self,_):
+        rt = rospy.get_rostime()
+        now = rt.to_sec()
+        dt = now-self.last_time
+        if dt<=0:
+            return
+        self.last_time = now
+
+        self.px = min(1.0,self.px + self.gain_func(self.jx)*dt)
+        self.py = min(1.0,self.py + self.gain_func(self.jy)*dt)
+        self.pz = min(1.0,self.pz + self.gain_func(self.jz)*dt)
+
+        msg = flydra_mainbrain_super_packet()
+        packet = flydra_mainbrain_packet()
+        obj = flydra_object()
+
+        obj.obj_id = self.id
+        obj.position = Point(self.px,self.py,self.pz)
+
+        packet.framenumber = self.framenumber
+        self.framenumber += 1
+        packet.reconstruction_stamp = rt
+        packet.acquire_stamp = rt
+        packet.objects = [obj]
+
+        msg.packets = [packet]
+
+        self.pub.publish(msg)
+
+if __name__=='__main__':
+    jp = JoyPacket()
+    rospy.spin()
