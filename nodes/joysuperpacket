@@ -21,10 +21,10 @@ class JoyPacket:
         self.px = self.py = self.pz = 0.0
 
         self.last_time = rospy.get_time()
-        self.framenumber = int(self.last_time)
-        self.pnow = Point()
-        self.plast = Point()
-        self.id = 1
+        big_unique_int32 = int(self.last_time)
+        self.framenumber = big_unique_int32
+        self.id = big_unique_int32
+        self.first_id = big_unique_int32
 
         rospy.Subscriber("joy", Joy, self.on_joy)
         rospy.Timer(rospy.Duration(1.0/FPS), self.on_timer)
@@ -32,9 +32,11 @@ class JoyPacket:
     def on_joy(self,msg):
         self.jx, self.jy,_,self.jz = msg.axes[:4]
         if msg.buttons[14]: # X
-            if self.id > 1:
+            if self.id == self.first_id:
                 self.to_kill.put(self.id)
             self.id += 1
+        if msg.buttons[12]: # /\
+            self.px = self.py = self.pz = 0.0
 
     def gain_func(self, in_val):
         return 1.5e-1*in_val
