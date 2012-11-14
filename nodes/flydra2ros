@@ -52,7 +52,7 @@ class Node(object):
         rospy.Subscriber("extra_lag_msec",
                          Float32,
                          self.on_extra_lag_msec)
-        rospy.Subscriber("flydra_mainbrain_super_packets",
+        rospy.Subscriber("flydra_mainbrain/super_packets",
                          flydra_mainbrain_super_packet,
                          self.on_flydra_mainbrain_super_packets)
         rospy.Subscriber("lock_object",

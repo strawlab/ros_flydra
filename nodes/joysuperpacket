@@ -14,7 +14,7 @@ FPS=100.0
 class JoyPacket:
     def __init__(self):
         rospy.init_node('joypacket')
-        self.pub = rospy.Publisher('flydra_mainbrain_super_packets', flydra_mainbrain_super_packet)
+        self.pub = rospy.Publisher('flydra_mainbrain/super_packets', flydra_mainbrain_super_packet)
         self.to_kill = Queue.Queue()
 
         self.jx = self.jy = self.jz = 0.0

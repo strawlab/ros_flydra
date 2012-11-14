@@ -22,8 +22,8 @@ def is_dead(fobj):
 
 class FlydraViz:
     def __init__(self):
-        self.pub = rospy.Publisher("~points", Marker)
-        self.sub = rospy.Subscriber("/flydra_mainbrain_super_packets", flydra_mainbrain_super_packet, self._got_msg)
+        self.pub = rospy.Publisher("flydra_mainbrain/viz_points", Marker)
+        self.sub = rospy.Subscriber("flydra_mainbrain/super_packets", flydra_mainbrain_super_packet, self._got_msg)
 
         self.N = 50
 
