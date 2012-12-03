@@ -18,8 +18,6 @@ from geometry_msgs.msg import Pose, Quaternion
 from std_msgs.msg import UInt32, Float32
 import rospy
 
-import display_client
-
 IMPOSSIBLE_OBJ_ID = 0
 IMPOSSIBLE_OBJ_ID_ZERO_POSE = 0xFFFFFFFF
 
