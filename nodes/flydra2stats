@@ -1,0 +1,72 @@
+#!/usr/bin/env python
+"""translate /flydra_mainbrain_super_packets into statistics messages
+"""
+
+import threading
+import numpy as np
+import scipy.stats as sstats
+
+# ROS imports
+import roslib; roslib.load_manifest('strawlab_freeflight_experiments')
+import ros_flydra.msg
+import rospy
+
+IMPOSSIBLE_OBJ_ID = 0
+IMPOSSIBLE_OBJ_ID_ZERO_POSE = 0xFFFFFFFF
+
+class Node(object):
+    def __init__(self):
+        rospy.init_node('flydra2stats')
+        self._lock = threading.Lock()
+        self._objects = {}
+        self._start = rospy.get_time()
+
+        self._timer = rospy.Timer(rospy.Duration(rospy.get_param("~interval", 60)),
+                                  self._send_updates)
+
+        self._pub = rospy.Publisher("flydra_mainbrain/tracking_statistics",
+                                    ros_flydra.msg.Statistics,
+                                    tcp_nodelay=True)
+
+        self._sub = rospy.Subscriber("flydra_mainbrain/super_packets",
+                                     ros_flydra.msg.flydra_mainbrain_super_packet,
+                                     self._on_flydra_mainbrain_super_packets)
+
+    def run(self):
+        rospy.spin()
+
+    def _send_updates(self, evt):
+        with self._lock:
+            objects = np.array(self._objects.values()) - self._start
+            self._objects.clear()
+            self._start = rospy.get_time()
+
+        n = objects.shape[0]
+        msg = ros_flydra.msg.Statistics()
+
+        if n > 0:
+            msg.n = n
+            msg.total = float(objects.sum())
+            msg.mean = float(objects.mean())
+            msg.std = float(objects.std())
+            msg.percentile10 = float(stats.scoreatpercentile(objects, 10))
+            msg.percentile50 = float(stats.scoreatpercentile(objects, 50))
+            msg.percentile90 = float(stats.scoreatpercentile(objects, 90))
+
+        self._pub.publish(msg)
+
+    def _on_flydra_mainbrain_super_packets(self,data):
+        with self._lock:
+            now = rospy.get_time()
+            for packet in data.packets:
+                for obj in packet.objects:
+                    objid = obj.obj_id
+                    if (objid != IMPOSSIBLE_OBJ_ID) and (objid != IMPOSSIBLE_OBJ_ID_ZERO_POSE):
+                        self._objects[objid] = now
+
+if __name__ == '__main__':
+    n = Node()
+    n.run()
+
+
+
