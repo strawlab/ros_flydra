@@ -24,7 +24,7 @@ class Node(object):
         self._timer = rospy.Timer(rospy.Duration(rospy.get_param("~interval", 60)),
                                   self._send_updates)
 
-        self._pub = rospy.Publisher("flydra_mainbrain/tracking_statistics",
+        self._pub = rospy.Publisher("flydra_mainbrain/tracking",
                                     ros_flydra.msg.Statistics,
                                     tcp_nodelay=True)
 
@@ -49,9 +49,9 @@ class Node(object):
             msg.total = float(objects.sum())
             msg.mean = float(objects.mean())
             msg.std = float(objects.std())
-            msg.percentile10 = float(stats.scoreatpercentile(objects, 10))
-            msg.percentile50 = float(stats.scoreatpercentile(objects, 50))
-            msg.percentile90 = float(stats.scoreatpercentile(objects, 90))
+            msg.percentile10 = float(sstats.scoreatpercentile(objects, 10))
+            msg.percentile50 = float(sstats.scoreatpercentile(objects, 50))
+            msg.percentile90 = float(sstats.scoreatpercentile(objects, 90))
 
         self._pub.publish(msg)
 
