@@ -19,7 +19,6 @@ from std_msgs.msg import UInt32, Float32
 import rospy
 
 IMPOSSIBLE_OBJ_ID = 0
-IMPOSSIBLE_OBJ_ID_ZERO_POSE = 0xFFFFFFFF
 
 class Node(object):
     def __init__(self):
@@ -28,6 +27,7 @@ class Node(object):
         self._estimates = blist.sorteddict()
         self._sent = (None, None, None)
         self._dt = 0.0
+
         self.extra_lag_sec = 0.0
 
         self.timeout = 0.5 # seconds before object is dropped
@@ -74,11 +74,11 @@ class Node(object):
         self.extra_lag_sec = (msg.data)*1e-3
 
     def on_lock_object(self,msg):
-        rospy.loginfo( 'request to lock obj_id %d'%(msg.data,) )
-
         if self._current_obj_id == msg.data:
             # we are already locked onto this object
             return
+
+        rospy.loginfo( 'request to lock obj_id %d'%(msg.data,) )
 
         if self._current_obj_id != IMPOSSIBLE_OBJ_ID:
             rospy.loginfo( 'request to stop lock obj_id %d (to lock %d)'%(self._current_obj_id,msg.data) )
@@ -93,7 +93,7 @@ class Node(object):
         r = rospy.Rate(10) # 10hz
         while not rospy.is_shutdown():
             # check for stale object ID
-            if self._current_obj_id not in (IMPOSSIBLE_OBJ_ID,IMPOSSIBLE_OBJ_ID_ZERO_POSE):
+            if self._current_obj_id != IMPOSSIBLE_OBJ_ID:
                 now = rospy.get_time()
                 duration_without_new_data = now - self._current_obj_last_seen_mytime
                 if duration_without_new_data > self.timeout:
@@ -127,7 +127,7 @@ class Node(object):
 
     def _send_updates(self,evt=None):
         # gets called at 200Hz and when new data comes in
-        if self._current_obj_id == IMPOSSIBLE_OBJ_ID_ZERO_POSE:
+        if self.extra_lag_sec < 0:
             msg = Pose()
             msg.orientation = self._ori
             for latency_sec, pub in self.latency_pubs.iteritems():
@@ -184,12 +184,6 @@ class Node(object):
                             self._current_obj_start_mytime = now
                             update = True
                         rospy.loginfo( 'locked on to obj_id %d'%(obj.obj_id,) )
-                elif self._current_obj_id == IMPOSSIBLE_OBJ_ID_ZERO_POSE:
-                    self._current_obj_last_seen_mytime = now
-                    self._current_obj_last_seen_acquire_stamp = acquire_stamp
-                    self._current_obj_last_seen_framenumber = framenumber
-                    self._send_updates()
-                    update = False
                 elif self._current_obj_id == obj.obj_id:
                     update = True
                 if update:
