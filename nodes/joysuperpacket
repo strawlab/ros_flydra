@@ -49,9 +49,15 @@ class JoyPacket:
             return
         self.last_time = now
 
+        lpx = self.px; lpy = self.py; lpz = self.pz;
+
         self.px = max(-1.0,min(1.0,self.px + self.gain_func(self.jx)*dt))
         self.py = max(-1.0,min(1.0,self.py + self.gain_func(self.jy)*dt))
         self.pz = max(0.0,min(1.0,self.pz + self.gain_func(self.jz)*dt))
+
+        vx = (self.px - lpx) / dt;
+        vy = (self.py - lpy) / dt
+        vz = (self.pz - lpz) / dt
 
         msg = flydra_mainbrain_super_packet()
         packet = flydra_mainbrain_packet()
@@ -69,6 +75,9 @@ class JoyPacket:
         obj.position.x = self.px
         obj.position.y = self.py
         obj.position.z = self.pz
+        obj.velocity.x = vx
+        obj.velocity.y = vy
+        obj.velocity.z = vz
         objects.append(obj)
 
         packet.framenumber = self.framenumber
