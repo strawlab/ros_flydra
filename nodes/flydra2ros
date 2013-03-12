@@ -13,12 +13,13 @@ import collections
 
 # ROS imports
 import roslib; roslib.load_manifest('strawlab_freeflight_experiments')
-from ros_flydra.msg import flydra_mainbrain_super_packet
 from geometry_msgs.msg import Pose, Quaternion
 from std_msgs.msg import UInt32, Float32
-import rospy
 
-IMPOSSIBLE_OBJ_ID = 0
+from ros_flydra.msg import flydra_mainbrain_super_packet
+from ros_flydra.constants import IMPOSSIBLE_OBJ_ID, IMPOSSIBLE_OBJ_ID_ZERO_POSE
+
+import rospy
 
 class Node(object):
     def __init__(self):
