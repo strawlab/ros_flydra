@@ -105,7 +105,7 @@ class MainBrainApp():
         if not self.main_brain.coord_processor.isAlive():
             print "ERROR: Coordinate processor thread died"
 
-        realtime_data = flydra.MainBrain.get_best_realtime_data()
+        realtime_data = self.main_brain.best_realtime_data
 
         reproj_points = {}
 

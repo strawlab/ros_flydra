@@ -1,0 +1,19 @@
+<launch>
+
+  <param name="flydra/main_brain" type="str" value="localhost" />
+
+  <node name="main_brain" pkg="ros_flydra" type="main_brain">
+    <param name="frames_per_second" type="double" value="100.0" />
+    <param name="hypothesis_test_max_acceptable_error" type="double" value="50.0" />
+    <param name="kalman_model" type="str" value="EKF mamarama, units: mm" />
+    <param name="max_N_hypothesis_test" type="int" value="3" />
+    <param name="max_reconstruction_latency_sec" type="double" value="0.06" />
+    <param name="save_data_dir" type="str" value="~/FLYDRA" />
+    <param name="camera_calibration" type="str" value="$(find flycave)/calibration/feb2013/feb19flipx.xml" />
+  </node>
+
+  <node name="camera_node" pkg="ros_flydra" type="camnode" args="--num-buffers=100  --background-frame-alpha=0.005 --background-frame-interval=100 --num-points=3">
+    <param name="cams_only" type="str" value="Basler-21029382,Basler-21029383,Basler-21029385,Basler-21215858" />
+  </node>
+
+</launch>

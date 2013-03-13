@@ -13,7 +13,10 @@ def main():
     spinthread = threading.Thread(target=rospy.spin)
     spinthread.start()
 
-    flydra.camnode.main(False,None)
+    flydra.camnode.main(
+        rospy_init_node=False,  #we have already done that
+        cmdline_args=rospy.myargv()[1:]
+    )
 
     rospy.signal_shutdown("quit")
 
