@@ -13,9 +13,7 @@ roslib.load_manifest('rospy')
 roslib.load_manifest('sensor_msgs')
 import rospy
 import sensor_msgs.msg
-
-POSE_HZ     = 2.0
-IMAGE_HZ    = 1/20.0
+import geometry_msgs.msg
 
 def add_crosshairs_to_nparr(arr, row, col, sz=-1, fill=255, chan=None):
     ri = arr.shape[0]
@@ -24,68 +22,134 @@ def add_crosshairs_to_nparr(arr, row, col, sz=-1, fill=255, chan=None):
     row = np.clip(math.floor(row),0,ri-1)
     col = np.clip(math.floor(col),0,ci-1)
     
-    try:
-        if sz < 0:
-            if chan == None:
-                arr[row,0:ci] = fill
-                arr[0:ri,col] = fill
-            else:
-                arr[row,0:ci,chan] = fill
-                arr[0:ri,col,chan] = fill
-        elif sz == 0:
-            if chan == None:
-                arr[row,col] = fill
-            else:
-                arr[row,col,chan] = fill
+    if sz < 0:
+        if chan == None:
+            arr[row,0:ci] = fill
+            arr[0:ri,col] = fill
         else:
-            if chan == None:
-                arr[max(0,row-sz):min(row+sz,ri),max(0,col-sz):min(col+sz,ci)] = fill
-            else:
-                arr[max(0,row-sz):min(row+sz,ri),max(0,col-sz):min(col+sz,ci),chan] = fill
-    except:
-        print "-----"*5
-        print "ERROR PAINTING ARRAY",row,col,sz,fill,chan,arr.shape
-        traceback.print_exc()
-        print "-----"*5
+            arr[row,0:ci,chan] = fill
+            arr[0:ri,col,chan] = fill
+    elif sz == 0:
+        if chan == None:
+            arr[row,col] = fill
+        else:
+            arr[row,col,chan] = fill
+    else:
+        if chan == None:
+            arr[max(0,row-sz):min(row+sz,ri),max(0,col-sz):min(col+sz,ci)] = fill
+        else:
+            arr[max(0,row-sz):min(row+sz,ri),max(0,col-sz):min(col+sz,ci),chan] = fill
 
-def numpy_to_imgmsg(image,stamp=None):
-    assert image.ndim == 3
+_NP_TO_ENC = {
+    np.dtype(np.uint8):"8UC",
+    np.dtype(np.uint16):"16UC"
+}
+
+def numpy_to_imgmsg(image,stamp=None, tostring=True):
+    enc = _NP_TO_ENC[image.dtype]
+
     rosimage = sensor_msgs.msg.Image()
     rosimage.height = image.shape[0]
     rosimage.width = image.shape[1]
-    if image.dtype == np.uint8:
-        rosimage.encoding = '8UC%d' % image.shape[2]
-        rosimage.step = image.shape[2] * rosimage.width
-        rosimage.data = image.ravel().tolist()
+    rosimage.encoding = '%s%d' % (enc,image.shape[2])
+    rosimage.step = image.shape[2] * rosimage.width
+
+    #FIXME: Why are both legal?
+    if tostring:
+        rosimage.data = image.ravel().tostring()
     else:
-        raise Exception("NOT SUPPORTED")
-        #doesnt work
-        #rosimage.encoding = '32FC%d' % image.shape[2]
-        #rosimage.step = rosimage.width * image.shape[2]
-        #rosimage.data = np.array(image.flat,dtype=np.float32).tostring()
+        rosimage.data = image.ravel().tolist()
+
     if stamp is not None:
         rosimage.header.stamp = stamp
 
     return rosimage
 
-class MainBrainApp():
-    def __init__(self, *args, **kwargs):
+class _Camera(rospy.SubscribeListener):
+    def __init__(self, cam_id, scalar_control_info, pubimgdt, minimgdt):
+        self.cam_id = cam_id
+        self.sci = scalar_control_info
+        self.n_subscribed = 0
+        self.pubimgdt = pubimgdt
+        self.minimgdt = minimgdt
+        self.img = self.img = np.zeros((self.sci['height'],self.sci['width'],3),dtype=np.uint8)
+        self.got_an_image = False
+        self.lastminimgt = self.lastpubimgt = rospy.get_time()
+        self.pub = rospy.Publisher("%s/tracking" % cam_id, sensor_msgs.msg.Image, subscriber_listener=self)
+
+        dt = min(self.pubimgdt, self.minimgdt if self.minimgdt > 0 else 1e9)
+        rospy.loginfo("Camera %s will request raw images every %.2fs" % (self.cam_id, dt))
+
+    def peer_subscribe(self, topic_name, topic_publish, peer_publish):
+        self.n_subscribed += 1
+
+    def peer_unsubscribe(self, topic_name, num_peers):
+        self.n_subscribed = max(0, self.n_subscribed-1)
+
+    def someone_subscribed(self):
+        return self.n_subscribed > 0
+
+    def should_request_new_image(self):
+        now = rospy.get_time()
+        pub_update = False
+        min_update = False
+        first_update = not self.got_an_image
+
+        if self.someone_subscribed():
+            if (now - self.lastpubimgt) > self.pubimgdt:
+                self.lastpubimgt = now
+                pub_update = True
+
+        if self.minimgdt > 0:
+            if (now - self.lastminimgt) > self.minimgdt:
+                self.lastminimgt = now
+                min_update = True
+
+        return pub_update or min_update or first_update
+
+    def publish_image(self, image, pts2d, reproj2d):
+        if image is not None:
+            self.img[:,:,:] = image.reshape((image.shape[0],image.shape[1],1))
+            self.got_an_image = True
+
+        if not self.someone_subscribed():
+            return
+
+        for pt in pts2d:
+            if np.isnan(pt[0]):
+                continue
+            add_crosshairs_to_nparr(self.img,int(pt[1]),int(pt[0]),sz=2,chan=1)
+
+        for pt in reproj2d:
+            if np.isnan(pt[0]):
+                continue
+            add_crosshairs_to_nparr(self.img,int(pt[1]),int(pt[0]),sz=2,chan=2)
+
+        msg = numpy_to_imgmsg(self.img)
+        self.pub.publish(msg)
+
+class MainBrainApp(object):
+    def __init__(self, pub_img_interval, req_img_interval, req_min_img_interval):
         self._currently_recording_cams = []
         self.cameras = {}
-        self.last_sound_time = 0
+        self.pub_best_pose = rospy.Publisher("~best_pose", geometry_msgs.msg.Pose)
+        self.req_img_interval = req_img_interval
+        self.req_min_img_interval = req_min_img_interval
+        self.pub_img_interval = pub_img_interval
+        self.pub_last_t = rospy.get_time()
+
+        rospy.loginfo("Will publish images at %.1fHz if any subscribers" % (1.0/pub_img_interval))
 
     def _on_new_camera(self, cam_id, scalar_control_info, fqdnport):
-        print 'new camera: ',cam_id
-        self.cameras[cam_id] = dict(
-            sci=scalar_control_info,
-            publisher=rospy.Publisher("/%s/tracking" % cam_id, sensor_msgs.msg.Image))
+        rospy.loginfo("new camera: %s" % cam_id)
+        self.cameras[cam_id] = _Camera(cam_id, scalar_control_info, self.req_img_interval, self.req_min_img_interval)
 
     def _on_old_camera(self, cam_id):
-        print "lost camera", cam_id
+        rospy.loginfo("lost camera: %s" % cam_id)
         del self.cameras[cam_id]
 
     def _on_config_change(self):
-        print "config change"
+        rospy.logdebug("config change")
         if not hasattr(self,"main_brain"):
             #race when closing
             return
@@ -97,69 +161,70 @@ class MainBrainApp():
         self.main_brain.set_old_camera_callback(self._on_old_camera)
         self.main_brain.start_listening()
 
-    def get_latest_pose(self):
+    def service_mainbrain(self):
         if not hasattr(self,'main_brain'):
-            return # quitting
+            return
         self.main_brain.service_pending() # may call OnNewCamera, OnOldCamera, etc
 
-        if not self.main_brain.coord_processor.isAlive():
-            print "ERROR: Coordinate processor thread died"
+    def get_latest_pose(self):
+        if not hasattr(self,'main_brain'):
+            return
 
-        realtime_data = self.main_brain.best_realtime_data
+        if not self.main_brain.coord_processor.is_alive():
+            rospy.signal_shutdown("coordinate processor thread died")
+            return
+
+        now = rospy.get_time()
+        if (now - self.pub_last_t) > self.pub_img_interval:
+            self.pub_last_t = now
+            pub = True
+        else:
+            pub = False
 
         reproj_points = {}
 
+        realtime_data = self.main_brain.best_realtime_data
         if realtime_data is not None:
-            Xs,min_mean_dist=realtime_data
-            data3d = Xs[0]
-            print '3D %r err %f' % (data3d, min_mean_dist)
+            Xs, min_mean_dist = realtime_data
             if min_mean_dist <= 10.0:
-                r=self.main_brain.reconstructor
-                if r is not None:
+                pose = geometry_msgs.msg.Pose()
+                pose.position.x = Xs[0][0]
+                pose.position.y = Xs[0][1]
+                pose.position.z = Xs[0][2]
+                self.pub_best_pose.publish(pose)
+
+                r = self.main_brain.reconstructor
+                if pub and (r is not None):
                     recon_cam_ids = r.get_cam_ids()
-                    for cam_id in self.cameras.keys():
-                        if cam_id not in recon_cam_ids:
-                            # no reconstructor data for this cam_id -- skip
-                            continue
-                        pts = []
-                        for X in Xs:
-                            pt=r.find2d(cam_id,X,
-                                        distorted=True)
-                            pts.append( pt )
+                    for cam_id in self.cameras:
+                        if cam_id in recon_cam_ids:
+                            #there is a reconstructor data for this cam_id. Some cam's might
+                            #not have reconstructors, like uncalibrated cams
+                            pts = [r.find2d(cam_id,X,distorted=True) for X in Xs]
+                            reproj_points[cam_id] = pts
 
-                        reproj_points[cam_id] = pts
-
-        for cam_id in self.cameras.keys():
-            try:
-                image, show_fps, points, image_coords = self.main_brain.get_last_image_fps(cam_id) # returns None if no new image
-            except KeyError:
-                # may have lost camera since call to service_pending
-                image = None
-
-            if image is not None:
-                sci = self.cameras[cam_id]['sci']
-                img = np.zeros((sci['height'],sci['width'],3),dtype=np.uint8)
-                img[:,:,:] = image.reshape((image.shape[0],image.shape[1],1))
-                for pt in points:
-                    if np.isnan(pt[0]):
-                        continue
-                    add_crosshairs_to_nparr(img,int(pt[1]),int(pt[0]),sz=2,chan=1)
-
-                if cam_id in reproj_points:
-                    for pt in reproj_points[cam_id]:
-                        if np.isnan(pt[0]):
-                            continue
-                        add_crosshairs_to_nparr(img,int(pt[1]),int(pt[0]),sz=2,chan=2)
-
-                self.cameras[cam_id]['publisher'].publish(numpy_to_imgmsg(img))
-
+        if pub:
+            for cam_id in self.cameras:
+                try:
+                    # returns None if no new image
+                    image, show_fps, points, image_coords = self.main_brain.get_last_image_fps(cam_id)
+                    self.cameras[cam_id].publish_image(image, points, reproj_points.get(cam_id, []))
+                except KeyError:
+                    # may have lost camera since call to service_pending
+                    pass
+                
     def get_latest_images(self):
-        for cam_id in self.cameras.keys():
-            try:
-                self.main_brain.request_image_async(cam_id)
-            except KeyError: # no big deal, camera probably just disconnected
-                pass
-    
+        if not hasattr(self,'main_brain'):
+            return
+
+        for cam_id in self.cameras:
+            if self.cameras[cam_id].should_request_new_image():
+                try:
+                    self.main_brain.request_image_async(cam_id)
+                except KeyError:
+                    #camera probably just disconnected
+                    pass
+
 def main():
     usage = '%prog [options]'
     parser = optparse.OptionParser(usage)
@@ -178,7 +243,12 @@ def main():
 
     rospy.init_node('flydra_mainbrain')
 
-    app = MainBrainApp(0)
+    pose_freq = rospy.get_param('pose_freq', 2.0)
+    pub_freq = rospy.get_param('image_freq', 1.0)
+    req_img_interval  = rospy.get_param('req_image_interval', 5.0)
+    req_min_img_interval  = rospy.get_param('req_image_minimum_interval', -1)
+
+    app = MainBrainApp(1.0/pub_freq, req_img_interval, req_min_img_interval)
 
     main_brain = flydra.MainBrain.MainBrain(server=options.server,
                                      save_profiling_data=options.save_profiling_data,
@@ -187,22 +257,19 @@ def main():
     try:
         # connect server to GUI
         app.attach_and_start_main_brain(main_brain)
-        r = rospy.Rate(POSE_HZ)
-        nth = POSE_HZ/IMAGE_HZ
+        r = rospy.Rate(pose_freq)
 
-        i = 0
         while not rospy.is_shutdown():
+            app.service_mainbrain()
             app.get_latest_pose()
+            app.get_latest_images()
+            try:
+                r.sleep()
+            except rospy.ROSInterruptException:
+                #shutting down
+                pass
 
-            if i == nth:
-                app.get_latest_images()
-                i = 0
-            else:
-                i += 1
-
-            r.sleep()
-
-        print 'mainloop over'
+        rospy.loginfo("mainbrain finished")
         del app
         
     finally:
