@@ -51,7 +51,7 @@ class JoyPacket:
 
         lpx = self.px; lpy = self.py; lpz = self.pz;
 
-        self.px = max(-1.0,min(1.0,self.px + self.gain_func(self.jx)*dt))
+        self.px = max(-1.0,min(1.0,self.px + self.gain_func(-1.0*self.jx)*dt))
         self.py = max(-1.0,min(1.0,self.py + self.gain_func(self.jy)*dt))
         self.pz = max(0.0,min(1.0,self.pz + self.gain_func(self.jz)*dt))
 
