@@ -18,6 +18,7 @@ _ENC_TO_NP = {
     "16UC2":(np.uint16,2),
     "16UC3":(np.uint16,3),
     "bayer_bggr8":(np.uint8,1),
+    "mono8":(np.uint8,1),
 }
 _ENC_TO_ARR = {
     "8UC1":"B",
@@ -27,6 +28,7 @@ _ENC_TO_ARR = {
     "16UC2":"H",
     "16UC3":"H",
     "bayer_bggr8":"B",
+    "mono8":"B",
 }
 
 
