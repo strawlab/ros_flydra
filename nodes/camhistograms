@@ -1,0 +1,96 @@
+#!/usr/bin/env python
+
+import traceback
+import argparse
+import threading
+
+import numpy as np
+
+import roslib
+roslib.load_manifest('ros_flydra')
+import rospy
+import ros_flydra.msg
+
+from ros_flydra import cv2_bridge
+
+roslib.load_manifest('rosgobject')
+import rosgobject
+
+roslib.load_manifest('sensor_msgs')
+import sensor_msgs.msg
+
+from gi.repository import GObject, Gtk, Gdk
+
+class mpl:
+    from matplotlib.figure import Figure
+    from matplotlib.backends.backend_gtk3agg import FigureCanvasGTK3Agg as FigureCanvas
+
+class HistWindow:
+    def __init__(self, topics):
+        self._w = Gtk.Window()
+        self._w.connect("delete-event", Gtk.main_quit )
+        self._w.set_default_size(800,600)
+        self._w.set_title("Camera Brightness")
+
+        self.figure = mpl.Figure(figsize=(8,6), dpi=72)
+        self.ax = self.figure.add_subplot(111)
+
+        sw = Gtk.ScrolledWindow()
+        self._w.add (sw)
+        # A scrolled window border goes outside the scrollbars and viewport
+        #sw.set_border_width (10)
+
+        self._canvas = mpl.FigureCanvas(self.figure) # a Gtk.DrawingArea
+        self._canvas.set_size_request(800,600)
+        sw.add_with_viewport (self._canvas)
+
+        self._imglock = threading.Lock()
+        self._imgs = {}
+        self._subs = {}
+        for t in topics:
+            name = t.split("/")[1]
+            self._subs[t] = rospy.Subscriber(t, sensor_msgs.msg.Image, self._got_image, name)
+
+        GObject.timeout_add_seconds(1, self._update)
+
+        self._w.show_all()
+
+    def _got_image(self, msg, name):
+        with self._imglock:
+            self._imgs[name] = cv2_bridge.imgmsg_to_numpy(msg)
+
+    def _update(self, *args):
+        self.figure.clear()
+
+        ax = self.figure.add_subplot(111)
+        for name in sorted(self._imgs):
+            ax.hist(
+                self._imgs[name].flatten(),
+                256,
+                histtype="step",
+                label=name
+            )
+        ax.legend()
+        ax.set_xlabel("pixel value")
+        ax.set_xlim([0,256])
+
+        self._canvas.draw()
+        return True
+
+if __name__ == "__main__":
+    rospy.init_node("camhistograms", anonymous=True)
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--camera', type=str, nargs='+', help='camera topics to subscribe to')
+    argv = rospy.myargv()
+    args = parser.parse_args(argv[1:])
+
+    rosgobject.get_ros_thread() #ensure ros is spinning
+    try:
+        u = HistWindow(args.camera)
+        Gtk.main()
+    except:
+        rospy.logfatal("crash in UI:\n%s" % traceback.format_exc())
+    finally:
+        rosgobject.main_quit()
+
