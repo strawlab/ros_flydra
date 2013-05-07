@@ -15,7 +15,7 @@ from ros_flydra import cv2_bridge
 
 import rospy
 import sensor_msgs.msg
-import geometry_msgs.msg
+import ros_flydra.msg
 
 def add_crosshairs_to_nparr(arr, row, col, sz=-1, fill=255, chan=None):
     ri = arr.shape[0]
@@ -109,7 +109,7 @@ class MainBrainApp(object):
     def __init__(self, pub_img_interval, req_img_interval, req_min_img_interval):
         self._currently_recording_cams = []
         self.cameras = {}
-        self.pub_best_pose = rospy.Publisher("~best_pose", geometry_msgs.msg.Pose)
+        self.pub_best_pose = rospy.Publisher("~best_pose", ros_flydra.msg.BestPose)
         self.req_img_interval = req_img_interval
         self.req_min_img_interval = req_min_img_interval
         self.pub_img_interval = pub_img_interval
@@ -163,13 +163,13 @@ class MainBrainApp(object):
         realtime_data = self.main_brain.best_realtime_data
         if realtime_data is not None:
             Xs, min_mean_dist = realtime_data
+            best = ros_flydra.msg.BestPose()
+            best.pose.position.x = Xs[0][0]
+            best.position.y = Xs[0][1]
+            best.position.z = Xs[0][2]
+            best.error = min_mean_dist
+            self.pub_best_pose.publish(best)
             if min_mean_dist <= 10.0:
-                pose = geometry_msgs.msg.Pose()
-                pose.position.x = Xs[0][0]
-                pose.position.y = Xs[0][1]
-                pose.position.z = Xs[0][2]
-                self.pub_best_pose.publish(pose)
-
                 r = self.main_brain.reconstructor
                 if pub and (r is not None):
                     recon_cam_ids = r.get_cam_ids()
