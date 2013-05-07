@@ -1,0 +1,42 @@
+#!/usr/bin/env python
+
+import subprocess
+
+import roslib
+roslib.load_manifest('ros_flydra')
+import rospy
+import ros_flydra.msg
+
+class Speakpose:
+
+    EXECUTABLE = "espeak"
+
+    def __init__(self):
+        self._enabled = True
+        self._process = None
+        self.sub = rospy.Subscriber("flydra_mainbrain/best_pose", ros_flydra.msg.BestPose, self._got_pose)
+
+    def speak(self, msg):
+        if not self._enabled:
+            return
+
+        if self._process is not None:
+            #check and set returncode
+            self._process.poll()
+            if self._process.returncode is None:
+                #espeak hasnt terminated yet
+                return
+
+        self._process = subprocess.Popen(
+                [self.EXECUTABLE, "\"%s\"" % msg],
+        )
+
+    def _got_pose(self, msg):
+        txt = "%.1f, %.1f, %.1f" % (msg.pose.position.x, msg.pose.position.y, msg.pose.position.z)
+        self.speak(txt)
+
+if __name__ == "__main__":
+    rospy.init_node("speakpose")
+    f = Speakpose()
+    rospy.spin()
+
