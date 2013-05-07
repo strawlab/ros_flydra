@@ -9,8 +9,10 @@ import flydra.MainBrain
 import numpy as np
 
 import roslib;
-roslib.load_manifest('rospy')
-roslib.load_manifest('sensor_msgs')
+roslib.load_manifest('ros_flydra')
+
+from ros_flydra import cv2_bridge
+
 import rospy
 import sensor_msgs.msg
 import geometry_msgs.msg
@@ -39,31 +41,6 @@ def add_crosshairs_to_nparr(arr, row, col, sz=-1, fill=255, chan=None):
             arr[max(0,row-sz):min(row+sz,ri),max(0,col-sz):min(col+sz,ci)] = fill
         else:
             arr[max(0,row-sz):min(row+sz,ri),max(0,col-sz):min(col+sz,ci),chan] = fill
-
-_NP_TO_ENC = {
-    np.dtype(np.uint8):"8UC",
-    np.dtype(np.uint16):"16UC"
-}
-
-def numpy_to_imgmsg(image,stamp=None, tostring=True):
-    enc = _NP_TO_ENC[image.dtype]
-
-    rosimage = sensor_msgs.msg.Image()
-    rosimage.height = image.shape[0]
-    rosimage.width = image.shape[1]
-    rosimage.encoding = '%s%d' % (enc,image.shape[2])
-    rosimage.step = image.shape[2] * rosimage.width
-
-    #FIXME: Why are both legal?
-    if tostring:
-        rosimage.data = image.ravel().tostring()
-    else:
-        rosimage.data = image.ravel().tolist()
-
-    if stamp is not None:
-        rosimage.header.stamp = stamp
-
-    return rosimage
 
 class _Camera(rospy.SubscribeListener):
     def __init__(self, cam_id, scalar_control_info, pubimgdt, minimgdt):
@@ -125,7 +102,7 @@ class _Camera(rospy.SubscribeListener):
                 continue
             add_crosshairs_to_nparr(self.img,int(pt[1]),int(pt[0]),sz=2,chan=2)
 
-        msg = numpy_to_imgmsg(self.img)
+        msg = cv2_bridge.numpy_to_imgmsg(self.img)
         self.pub.publish(msg)
 
 class MainBrainApp(object):
