@@ -1,0 +1,75 @@
+#!/usr/bin/env python
+
+import subprocess
+import traceback
+
+import roslib
+roslib.load_manifest('ros_flydra')
+import rospy
+import ros_flydra.msg
+
+import roslib
+roslib.load_manifest('rosgobject')
+import rosgobject
+
+from gi.repository import GObject, Gtk, Gdk
+
+class HugeLabel(Gtk.EventBox):
+    def __init__(self, size=80):
+        Gtk.EventBox.__init__(self)
+
+        self._size = size
+
+        bg = Gdk.RGBA()
+        bg.parse('black')
+        self.override_background_color(Gtk.StateFlags.NORMAL,bg)
+
+        self._l = Gtk.Label()
+        fg = Gdk.RGBA()
+        fg.parse("white")
+        self._l.override_color(Gtk.StateFlags.NORMAL,fg)
+        self.add(self._l)
+
+    def set_text(self, tstr):
+        self._l.set_markup('<span font="mono %d">%s</span>' % (self._size,tstr))
+        #return false to run idle_add only once
+        return False
+
+class ShowPose:
+
+    def __init__(self):
+        self._w = Gtk.Window()
+        self._w.connect("delete-event", rosgobject.main_quit)
+        self._l = HugeLabel()
+        self._w.add(self._l)
+        self._w.show_all()
+
+        self._last = rospy.get_time()
+        self._clear_pose()
+
+        self._sub = rospy.Subscriber("flydra_mainbrain/best_pose", ros_flydra.msg.BestPose, self._got_pose)
+        rospy.Timer(rospy.Duration(5), self._check_last_msg_time)
+
+    def _check_last_msg_time(self, evt):
+        if (rospy.get_time() - self._last) > 10:
+            self._clear_pose()
+
+    def _clear_pose(self):
+        self._l.set_text("xyz:               \nerr:     ")
+
+    def _got_pose(self, msg):
+        self._last = rospy.get_time()
+        txt = "xyz: {0:>+4.1f} {1:>+4.1f} {2:>+4.1f}\nerr: {3:>+4.1f}".format(msg.pose.position.x, msg.pose.position.y, msg.pose.position.z, msg.error)
+        GObject.idle_add(self._l.set_text, txt)
+
+if __name__ == "__main__":
+    rospy.init_node("showpose", anonymous=True)
+    rosgobject.get_ros_thread() #ensure ros is spinning
+    try:
+        u = ShowPose()
+        Gtk.main()
+    except:
+        rospy.logfatal("crash in UI:\n%s" % traceback.format_exc())
+    finally:
+        rosgobject.main_quit()
+
