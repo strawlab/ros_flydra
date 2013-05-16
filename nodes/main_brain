@@ -43,19 +43,17 @@ def add_crosshairs_to_nparr(arr, row, col, sz=-1, fill=255, chan=None):
             arr[max(0,row-sz):min(row+sz,ri),max(0,col-sz):min(col+sz,ci),chan] = fill
 
 class _Camera(rospy.SubscribeListener):
-    def __init__(self, cam_id, scalar_control_info, pubimgdt, minimgdt):
+    def __init__(self, cam_id, scalar_control_info, reqimagedt):
         self.cam_id = cam_id
         self.sci = scalar_control_info
         self.n_subscribed = 0
-        self.pubimgdt = pubimgdt
-        self.minimgdt = minimgdt
+        self.reqimagedt = reqimagedt
         self.img = self.img = np.zeros((self.sci['height'],self.sci['width'],3),dtype=np.uint8)
         self.got_an_image = False
-        self.lastminimgt = self.lastpubimgt = rospy.get_time()
+        self.lastreqimgt = rospy.get_time()
         self.pub = rospy.Publisher("%s/tracking" % cam_id, sensor_msgs.msg.Image, subscriber_listener=self)
 
-        dt = min(self.pubimgdt, self.minimgdt if self.minimgdt > 0 else 1e9)
-        rospy.loginfo("Camera %s will request raw images every %.2fs" % (self.cam_id, dt))
+        rospy.loginfo("Camera %s will request raw images every %.2fs" % (self.cam_id, self.reqimagedt))
 
     def peer_subscribe(self, topic_name, topic_publish, peer_publish):
         self.n_subscribed += 1
@@ -69,20 +67,14 @@ class _Camera(rospy.SubscribeListener):
     def should_request_new_image(self):
         now = rospy.get_time()
         pub_update = False
-        min_update = False
         first_update = not self.got_an_image
 
         if self.someone_subscribed():
-            if (now - self.lastpubimgt) > self.pubimgdt:
-                self.lastpubimgt = now
+            if (now - self.lastreqimgt) > self.reqimagedt:
+                self.lastreqimgt = now
                 pub_update = True
 
-        if self.minimgdt > 0:
-            if (now - self.lastminimgt) > self.minimgdt:
-                self.lastminimgt = now
-                min_update = True
-
-        return pub_update or min_update or first_update
+        return pub_update or first_update
 
     def publish_image(self, image, pts2d, reproj2d):
         if image is not None:
@@ -106,12 +98,11 @@ class _Camera(rospy.SubscribeListener):
         self.pub.publish(msg)
 
 class MainBrainApp(object):
-    def __init__(self, pub_img_interval, req_img_interval, req_min_img_interval):
+    def __init__(self, pub_img_interval, req_img_interval):
         self._currently_recording_cams = []
         self.cameras = {}
         self.pub_best_pose = rospy.Publisher("~best_pose", ros_flydra.msg.BestPose)
         self.req_img_interval = req_img_interval
-        self.req_min_img_interval = req_min_img_interval
         self.pub_img_interval = pub_img_interval
         self.pub_last_t = rospy.get_time()
 
@@ -119,7 +110,7 @@ class MainBrainApp(object):
 
     def _on_new_camera(self, cam_id, scalar_control_info, fqdnport):
         rospy.loginfo("new camera: %s" % cam_id)
-        self.cameras[cam_id] = _Camera(cam_id, scalar_control_info, self.req_img_interval, self.req_min_img_interval)
+        self.cameras[cam_id] = _Camera(cam_id, scalar_control_info, self.req_img_interval)
 
     def _on_old_camera(self, cam_id):
         rospy.loginfo("lost camera: %s" % cam_id)
@@ -220,12 +211,17 @@ def main():
 
     rospy.init_node('flydra_mainbrain')
 
-    pose_freq = rospy.get_param('pose_freq', 2.0)
+    #there are 3 rates/freqs here and it is a bit confusing
+    #
+    #pub freq is the rate at which images are published (with tracking information
+    #overlayed) ONLY IF THERE IS A SUBSCRIBER
+    #
+    #req_image_interval is the rate at which the mainbrain requests new images
+    #from the camnodes.
     pub_freq = rospy.get_param('image_freq', 1.0)
     req_img_interval  = rospy.get_param('req_image_interval', 5.0)
-    req_min_img_interval  = rospy.get_param('req_image_minimum_interval', -1)
 
-    app = MainBrainApp(1.0/pub_freq, req_img_interval, req_min_img_interval)
+    app = MainBrainApp(1.0/pub_freq, req_img_interval)
 
     main_brain = flydra.MainBrain.MainBrain(server=options.server,
                                      save_profiling_data=options.save_profiling_data,
@@ -234,11 +230,15 @@ def main():
     try:
         # connect server to GUI
         app.attach_and_start_main_brain(main_brain)
-        r = rospy.Rate(pose_freq)
 
+        #service the mainbrain (handle new cameras, get latest pose, etc)
+        #at 2Hz (old mainbrain used to do it every 900ms
+        r = rospy.Rate(2)
         while not rospy.is_shutdown():
             app.service_mainbrain()
             app.get_latest_pose()
+            #the actual rate of requesting the latest images from the camera nodes
+            #is controled by req_img_interval
             app.get_latest_images()
             try:
                 r.sleep()
