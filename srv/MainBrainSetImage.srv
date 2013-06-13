@@ -1,0 +1,5 @@
+std_msgs/String cam_id
+std_msgs/Int32 left
+std_msgs/Int32 bottom
+sensor_msgs/Image image
+---
