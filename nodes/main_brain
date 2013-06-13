@@ -156,8 +156,8 @@ class MainBrainApp(object):
             Xs, min_mean_dist = realtime_data
             best = ros_flydra.msg.BestPose()
             best.pose.position.x = Xs[0][0]
-            best.position.y = Xs[0][1]
-            best.position.z = Xs[0][2]
+            best.pose.position.y = Xs[0][1]
+            best.pose.position.z = Xs[0][2]
             best.error = min_mean_dist
             self.pub_best_pose.publish(best)
             if min_mean_dist <= 10.0:
