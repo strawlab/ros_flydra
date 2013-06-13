@@ -38,8 +38,13 @@ def numpy_to_imgmsg(image,stamp=None, tostring=True):
     rosimage = sensor_msgs.msg.Image()
     rosimage.height = image.shape[0]
     rosimage.width = image.shape[1]
-    rosimage.encoding = '%s%d' % (enc,image.shape[2])
-    rosimage.step = image.shape[2] * rosimage.width
+    if image.ndim==2:
+        rosimage.encoding = '8UC1'
+        rosimage.step = rosimage.width
+    else:
+        assert image.ndim==3
+        rosimage.encoding = '%s%d' % (enc,image.shape[2])
+        rosimage.step = image.shape[2] * rosimage.width
 
     #FIXME: Why are both legal?
     if tostring:
