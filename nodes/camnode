@@ -2,7 +2,13 @@
 
 import threading
 
-import flydra.camnode
+try:
+    import flydra.camnode
+except ImportError:
+    import sys
+    import os.path
+    sys.path.insert(0, os.path.expanduser("~/flydra.git"))
+    import flydra.camnode
 
 import roslib; roslib.load_manifest('rospy')
 import rospy
