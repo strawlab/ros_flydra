@@ -53,7 +53,7 @@ class _Camera(rospy.SubscribeListener):
         self.lastreqimgt = rospy.get_time()
         self.pub = rospy.Publisher("%s/tracking" % cam_id, sensor_msgs.msg.Image, subscriber_listener=self)
 
-        rospy.loginfo("Camera %s will request raw images every %.2fs" % (self.cam_id, self.reqimagedt))
+        rospy.loginfo("Camera %s: if subscribed, images will be updated every %.2fs" % (self.cam_id, self.reqimagedt))
 
     def peer_subscribe(self, topic_name, topic_publish, peer_publish):
         self.n_subscribed += 1
