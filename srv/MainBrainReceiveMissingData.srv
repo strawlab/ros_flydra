@@ -1,0 +1,4 @@
+std_msgs/String cam_id
+std_msgs/Int64 framenumber_offset
+std_msgs/String missing_data_json_buf # encode all missing data as JSON
+---
