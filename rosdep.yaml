@@ -1,2 +1,4 @@
 python-opencv:
   ubuntu: python-opencv
+python-blist:
+  ubuntu: python-blist

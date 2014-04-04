@@ -10,6 +10,5 @@
   <depend package="geometry_msgs"/>
   <depend package="sensor_msgs"/>
   <rosdep name="python-opencv"/>
+  <rosdep name="python-blist"/>
 </package>
-
-
