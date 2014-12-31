@@ -4,4 +4,9 @@ std_msgs/String camnode_ros_name
 std_msgs/String cam_hostname
 std_msgs/String cam_ip
 ---
-std_msgs/Int32 port
+
+# This return value is here only for backwards compatibility
+# reasons. MainBrain returns a meaningless -1 now. Use
+# MainBrainGetListenAddress instead.
+
+std_msgs/Int32 port # Always -1. See above.
