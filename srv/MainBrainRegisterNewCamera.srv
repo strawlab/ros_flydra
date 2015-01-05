@@ -2,7 +2,7 @@ std_msgs/String cam_guid
 std_msgs/String scalar_control_info_json
 std_msgs/String camnode_ros_name
 std_msgs/String cam_hostname
-std_msgs/String cam_ip
+std_msgs/String cam_ip # here only for backwards compatibility
 ---
 
 # This return value is here only for backwards compatibility
