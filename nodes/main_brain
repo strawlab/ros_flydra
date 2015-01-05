@@ -197,7 +197,7 @@ def main():
     usage = '%prog [options]'
     parser = optparse.OptionParser(usage)
     parser.add_option("--server", dest="server", type='string',
-                      help="hostname of mainbrain SERVER",
+                      help="A parameter only present for backwards compability",
                       default='',
                       metavar="SERVER")
     parser.add_option("--save-profiling-data",
@@ -208,6 +208,8 @@ def main():
                       default=True, action="store_false",
                       )
     (options, args) = parser.parse_args()
+    if options.server != '':
+        rospy.logwarn("Deprecated '--server' CLI argument given.")
 
     rospy.init_node('flydra_mainbrain')
 
@@ -223,7 +225,7 @@ def main():
 
     app = MainBrainApp(1.0/pub_freq, req_img_interval)
 
-    main_brain = flydra.MainBrain.MainBrain(server=options.server,
+    main_brain = flydra.MainBrain.MainBrain(
                                      save_profiling_data=options.save_profiling_data,
                                      show_sync_errors=options.show_sync_errors)
 
