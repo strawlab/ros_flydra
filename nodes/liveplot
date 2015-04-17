@@ -1,0 +1,184 @@
+#!/usr/bin/env python
+"""
+plots ros superpackets in 3D
+"""
+import matplotlib.pyplot as plt
+import mpl_toolkits.mplot3d.axes3d as p3
+import matplotlib.animation as animation
+import roslib
+roslib.load_manifest('strawlab_freeflight_experiments')
+import rospy
+import ros_flydra.msg
+import argparse
+import collections
+import itertools
+import math
+
+class DataHandler():
+    '''
+    we store xzy for every objid with this class to a circular buffer
+    new objIds are added, old ones that are not updated for a periode of time
+    are deleted
+    '''
+    def __init__(self, buffer_length=1000, dead_after_secs=30):
+        self.obj = {}  # memory
+        self.buffer_length = buffer_length
+        self.dead_after_secs = dead_after_secs
+        self._super_packet = None
+        rospy.Subscriber("/flydra_mainbrain/super_packets",
+                         ros_flydra.msg.flydra_mainbrain_super_packet,
+                         self._on_target_move)
+
+    def _on_target_move(self, msg):
+        self._super_packet = msg.packets[0]
+
+    def acquire(self):
+        new_dataset = self._super_packet
+        if new_dataset != None:  # is none if nothing comes from ros
+            timestamp = new_dataset.acquire_stamp.secs
+            objects = new_dataset.objects
+            # add data from objects
+            for obj in objects:
+                # if new obj
+                if obj.obj_id not in self.obj:  # add ob to dict if not existing
+                    self.obj[obj.obj_id] = {}
+                    self.obj[obj.obj_id]['x'] = collections.deque(
+                                        [obj.position.x] * self.buffer_length,
+                                        maxlen=self.buffer_length
+                                        )
+                    self.obj[obj.obj_id]['y'] = collections.deque(
+                                        [obj.position.y] * self.buffer_length,
+                                        maxlen=self.buffer_length
+                                        )
+                    self.obj[obj.obj_id]['z'] = collections.deque(
+                                        [obj.position.z] * self.buffer_length,
+                                        maxlen=self.buffer_length
+                                        )
+                self.obj[obj.obj_id]['lastSeen'] = timestamp
+                self.obj[obj.obj_id]['x'].append(obj.position.x)
+                self.obj[obj.obj_id]['y'].append(obj.position.y)
+                self.obj[obj.obj_id]['z'].append(obj.position.z)
+            # cleanup old objids
+            for obj_id in self.obj.keys():
+                time_dif = timestamp - self.obj[obj_id]['lastSeen']
+                if time_dif >= self.dead_after_secs:  # LAMEST FIX IT!
+                    del self.obj[obj_id]
+
+    def get_max_min(self):
+        min_max = {}
+        for a in 'xyz':
+            v = list(itertools.chain(*[self.obj[i][a] for i in self.obj]))
+            min_max['min_%s' % a] = min(v)
+            min_max['max_%s' % a] = max(v)
+        return min_max
+
+    def get_data_to_draw(self):
+        return self.obj
+
+
+class Lines():
+    '''
+    this class holds our lines, updates and draws them
+    '''
+    def __init__(self, ax, buffer_length, autoscale):
+        self.data = DataHandler(buffer_length)
+        self.lines = {}
+        self.pts = {}
+        self.ax = ax
+        self.autoscale = autoscale
+
+    def _delete_dead_lines(self, obj_ids_in_data):
+        '''
+        if an objId is not any more in the data obj, we assume that it timed
+        out and we delete it here too
+        '''
+        for obj_id in self.lines.keys():
+            if obj_id not in obj_ids_in_data:
+                ind_lines = self.ax.lines.index(self.lines[obj_id])
+                del self.ax.lines[ind_lines]
+                ind_pts = self.ax.lines.index(self.pts[obj_id])
+                del self.ax.lines[ind_pts]
+                del self.lines[obj_id]
+                del self.pts[obj_id]
+
+    def draw(self, i):
+        '''
+        lets draw the graph
+        '''
+        self.data.acquire()
+        da = self.data.get_data_to_draw()
+        objIds_in_data = da.keys()
+        for objId in objIds_in_data:
+            if objId not in self.lines:
+                # add new line
+                self.lines[objId], = self.ax.plot(da[objId]['x'],
+                                                  da[objId]['y'],
+                                                  da[objId]['z'])
+                self.pts[objId], = self.ax.plot([da[objId]['x'][-1]],
+                                                [da[objId]['y'][-1]],
+                                                [da[objId]['z'][-1]],
+                                                'o',
+                                                c="r")
+            # load data from mem to lines
+            self.lines[objId].set_data(da[objId]['x'], da[objId]['y'])
+            self.lines[objId].set_3d_properties(da[objId]['z'])  # this line is needet to draw in this plot
+            self.pts[objId].set_data([da[objId]['x'][-1]], [da[objId]['y'][-1]])
+            self.pts[objId].set_3d_properties([da[objId]['z'][-1]])  # this line is needet to draw in this plot
+            # autoscale
+            if self.autoscale:
+                min_max = self.data.get_max_min()
+                vals = [math.sqrt(min_max[i] ** 2) for i in min_max]
+                limit = max(vals)
+                self.ax.set_xlim3d(-limit, limit)
+                self.ax.set_ylim3d(-limit, limit)
+                self.ax.set_zlim3d(-limit, limit)
+        self._delete_dead_lines(objIds_in_data)
+        return self.lines, self.pts
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Alternative to rviz, listens to flydra_mainbrain_super_packets')
+    parser.add_argument('--x_min', type=int, default=None, help='drawing limits')
+    parser.add_argument('--x_max', type=int, default=None, help='drawing limits')
+    parser.add_argument('--y_min', type=int, default=None, help='drawing limits')
+    parser.add_argument('--y_max', type=int,  default=None, help='drawing limits')
+    parser.add_argument('--z_min', type=int, default=None, help='drawing limits')
+    parser.add_argument('--z_max', type=int, default=None, help='drawing limits')
+    parser.add_argument('--autoscale', action='store_true', help='set drawing limits automaticly')
+    parser.add_argument('--update-rate', type=int, default=10, help='in Hz. As it needs cpu power to redraw, 20Hz is a good setting')
+    parser.add_argument('--buffer-length', type=int, default=500, help='how many points of a trajectory should be drawn')
+
+    args = parser.parse_args()
+
+    # init Ros
+    rospy.init_node("liveplot")
+
+    # Attaching 3D axis to the figure
+    fig = plt.figure()
+    ax = p3.Axes3D(fig)
+    print args.autoscale
+    lines = Lines(ax,
+                  args.buffer_length if args.buffer_length is not None else rospy.get_param('~buffer_length', 500),
+                  args.autoscale if args.autoscale is not None else rospy.get_param('~autoscale',False),
+                  )
+
+    update_rate = args.update_rate if args.update_rate is not None else rospy.get_param('~update_rate', 10)
+
+    # Setting the axes properties
+    default_ax = 0.2
+    ax.set_xlim3d([args.x_min if args.x_min is not None else rospy.get_param('~x_min', -default_ax),
+                        args.x_max if args.x_max is not None else rospy.get_param('~x_max', default_ax)])
+    ax.set_xlabel('X')
+
+    ax.set_ylim3d([args.y_min if args.y_min is not None else rospy.get_param('~y_min', -default_ax),
+                        args.y_max if args.y_max is not None else rospy.get_param('~y_max', default_ax)])
+    ax.set_ylabel('Y')
+
+    ax.set_zlim3d([args.z_min if args.z_min is not None else rospy.get_param('~z_min', -default_ax),
+                        args.z_max if args.z_max is not None else rospy.get_param('~z_max', default_ax)])
+    ax.set_zlabel('Z')
+
+    ax.set_title('3D')
+
+    # Creating the Animation object
+    line_ani = animation.FuncAnimation(fig, lines.draw, interval=1000 / update_rate, blit=False)
+    plt.show()
