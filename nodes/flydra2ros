@@ -17,7 +17,7 @@ roslib.load_manifest('geometry_msgs')
 roslib.load_manifest('std_msgs')
 from geometry_msgs.msg import Pose, Quaternion
 from std_msgs.msg import UInt32, Float32
-
+roslib.load_manifest('ros_flydra')
 from ros_flydra.msg import flydra_mainbrain_super_packet
 from ros_flydra.constants import IMPOSSIBLE_OBJ_ID, IMPOSSIBLE_OBJ_ID_ZERO_POSE
 
