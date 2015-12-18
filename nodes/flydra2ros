@@ -12,7 +12,9 @@ import blist
 import collections
 
 # ROS imports
-import roslib; roslib.load_manifest('strawlab_freeflight_experiments')
+import roslib
+roslib.load_manifest('geometry_msgs')
+roslib.load_manifest('std_msgs')
 from geometry_msgs.msg import Pose, Quaternion
 from std_msgs.msg import UInt32, Float32
 
