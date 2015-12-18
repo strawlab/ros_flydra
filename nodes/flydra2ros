@@ -42,6 +42,10 @@ class Node(object):
             self.latency_pubs[latency_sec] = rospy.Publisher(topic_name, Pose,
                                                              tcp_nodelay=True)
 
+        #re-publish some summary topics at a low rate
+        self._num_objects = 0
+        self._pub_num_objects = rospy.Publisher('flydra_mainbrain/num_objects', UInt32)
+
         self._ori = Quaternion(0,0,0,1) # a valid orientation
 
         #self.lock = threading.Lock()
@@ -91,6 +95,8 @@ class Node(object):
         self._current_obj_last_seen_framenumber = 0
 
     def run(self):
+        i = 0
+
         r = rospy.Rate(10) # 10hz
         while not rospy.is_shutdown():
             # check for stale object ID
@@ -102,6 +108,10 @@ class Node(object):
                     self._clear_object('timeout on obj_id %d'%self._current_obj_id)
 
             self._pub_latency.publish(self._dt)
+
+            i += 1
+            if (i % 10) == 0:
+                self._pub_num_objects.publish(self._num_objects)
 
             r.sleep()
 
@@ -169,11 +179,13 @@ class Node(object):
         return not (((position.z < 0.05) or (position.z > 0.95) ) or ( (position.x**2 + position.y**2) > 0.45**2))
 
     def on_flydra_mainbrain_super_packets(self,data):
+        n_objects = 0
         now = rospy.get_time()
         for packet in data.packets:
             framenumber = packet.framenumber
             acquire_stamp = packet.acquire_stamp
             for obj in packet.objects:
+                n_objects += 1
                 update = False
                 if self._current_obj_id == IMPOSSIBLE_OBJ_ID:
                     if self.in_volume_of_interest(obj.position):
@@ -210,6 +222,8 @@ class Node(object):
                             self._set_lagged_estimates(now, pos_est, vel_est, acquire_stamp)
 
                         self._send_updates() # send upon data receive to minimize lag
+
+        self._num_objects = n_objects
 
 if __name__ == '__main__':
     n = Node()
