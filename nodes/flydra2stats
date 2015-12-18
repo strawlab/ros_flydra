@@ -7,7 +7,7 @@ import numpy as np
 import scipy.stats as sstats
 
 # ROS imports
-import roslib; roslib.load_manifest('strawlab_freeflight_experiments')
+import roslib; roslib.load_manifest('ros_flydra')
 import ros_flydra.msg
 import rospy
 
