@@ -1,0 +1,4 @@
+std_msgs/String cam_id
+std_msgs/Float32 timestamp
+std_msgs/String message
+---

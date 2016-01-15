@@ -17,6 +17,7 @@ def main():
     rospy.init_node('flydra_camnode')
 
     spinthread = threading.Thread(target=rospy.spin)
+    spinthread.setDaemon(True)
     spinthread.start()
 
     flydra.camnode.main(
