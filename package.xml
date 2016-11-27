@@ -1,0 +1,25 @@
+<package>
+  <name>ros_flydra</name>
+  <version>0.0.1</version>
+  <description>
+     ros_flydra
+  </description>
+  <author>Andrew Straw</author>
+  <maintainer email="strawman@astraw.com">Andrew Straw</maintainer>
+  <license>BSD</license>
+  <url>http://flydra.astraw.com</url>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>message_generation</build_depend>
+  <build_depend>geometry_msgs</build_depend>
+  <build_depend>sensor_msgs</build_depend>
+
+  <run_depend>message_runtime</run_depend>
+  <run_depend>sensor_msgs</run_depend>
+  <run_depend>geometry_msgs</run_depend>
+  <run_depend>rospy</run_depend>
+  <run_depend>python-opencv</run_depend>
+  <run_depend>python-blist</run_depend>
+
+</package>
