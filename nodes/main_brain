@@ -101,7 +101,7 @@ class MainBrainApp(object):
     def __init__(self, pub_img_interval, req_img_interval):
         self._currently_recording_cams = []
         self.cameras = {}
-        self.pub_best_pose = rospy.Publisher("~best_pose", ros_flydra.msg.BestPose)
+        self.pub_best_pose = rospy.Publisher("~best_pose", ros_flydra.msg.BestPose, queue_size=1)
         self.req_img_interval = req_img_interval
         self.pub_img_interval = pub_img_interval
         self.pub_last_t = rospy.get_time()
