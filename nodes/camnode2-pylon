@@ -1,0 +1,16 @@
+#!/bin/bash
+set -e
+
+# This is a stub to run camnode2-pylon from the path.
+#
+# Typically you would start a camera from a launch file like this:
+#
+#    <node name="cam1" pkg="ros_flydra" type="camnode2-pylon" args="--camera-name=Basler-22005677 --http-server-addr=127.0.0.1:4011">
+#    </node>
+#
+# The ros params could be set in a YAML file like so:
+#
+#    Basler_22005677: {gain_db: 1.0, exposure_usec: 9800, external_trigger: On}
+#
+
+camnode2-pylon $*
