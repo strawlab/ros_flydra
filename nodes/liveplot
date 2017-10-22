@@ -11,6 +11,7 @@ import argparse
 import collections
 import itertools
 import math
+import numpy as np
 
 class DataHandler():
     '''
@@ -56,6 +57,10 @@ class DataHandler():
                 self.obj[obj.obj_id]['x'].append(obj.position.x)
                 self.obj[obj.obj_id]['y'].append(obj.position.y)
                 self.obj[obj.obj_id]['z'].append(obj.position.z)
+                if np.isnan(obj.position.x):
+                    print('deleting %d'%obj.obj_id)
+                    del self.obj[obj.obj_id]
+
             # cleanup old objids
             for obj_id in self.obj.keys():
                 time_dif = timestamp - self.obj[obj_id]['lastSeen']
@@ -153,7 +158,6 @@ if __name__ == '__main__':
     # Attaching 3D axis to the figure
     fig = plt.figure()
     ax = p3.Axes3D(fig)
-    print args.autoscale
     lines = Lines(ax,
                   args.buffer_length if args.buffer_length is not None else rospy.get_param('~buffer_length', 500),
                   args.autoscale if args.autoscale is not None else rospy.get_param('~autoscale',False),
