@@ -10,6 +10,7 @@ import numpy as np
 import warnings
 import blist
 import collections
+import time
 
 # ROS imports
 import roslib
@@ -24,8 +25,9 @@ from ros_flydra.constants import IMPOSSIBLE_OBJ_ID, IMPOSSIBLE_OBJ_ID_ZERO_POSE
 import rospy
 
 class Node(object):
-    def __init__(self):
+    def __init__(self, args):
         rospy.init_node('flydra2ros')
+        self._args = args
         self._estlock = threading.Lock()
         self._estimates = blist.sorteddict()
         self._sent = (None, None, None)
@@ -178,14 +180,20 @@ class Node(object):
                 pub.publish(msg)
 
     def in_volume_of_interest(self,position):
-        return not (((position.z < 0.05) or (position.z > 0.95) ) or ( (position.x**2 + position.y**2) > 0.45**2))
+        if self._args.accept_all:
+            return True
+        else:
+            return not (((position.z < 0.05) or (position.z > 0.95) ) or ( (position.x**2 + position.y**2) > 0.45**2))
 
     def on_flydra_mainbrain_super_packets(self,data):
         n_objects = 0
         now = rospy.get_time()
         for packet in data.packets:
             framenumber = packet.framenumber
-            acquire_stamp = packet.acquire_stamp
+            if self._args.ignore_timestamps:
+                acquire_stamp = rospy.Time.now()
+            else:
+                acquire_stamp = packet.acquire_stamp
             for obj in packet.objects:
                 n_objects += 1
                 update = False
@@ -228,7 +236,16 @@ class Node(object):
         self._num_objects = n_objects
 
 if __name__ == '__main__':
-    n = Node()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--accept-all', action='store_true',
+                help='any point is in tracking volume')
+    parser.add_argument('--ignore-timestamps', action='store_true',
+                help='ignore tracking data timestamps')
+    argv = rospy.myargv()
+    args = parser.parse_args(argv[1:])
+
+    n = Node(args)
     n.run()
 
 
