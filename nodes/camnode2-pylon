@@ -5,7 +5,7 @@ set -e
 #
 # Typically you would start a camera from a launch file like this:
 #
-#    <node name="cam1" pkg="ros_flydra" type="camnode2-pylon" args="--camera-name=Basler-22005677 --http-server-addr=127.0.0.1:4011">
+#    <node name="Basler_22005677" pkg="ros_flydra" type="camnode2-pylon" args="--camera-name=Basler-22005677 --http-server-addr=127.0.0.1:4011 --ros-tracking-start-delay=30">
 #    </node>
 #
 # The ros params could be set in a YAML file like so:
