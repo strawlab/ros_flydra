@@ -10,6 +10,7 @@
     <param name="max_reconstruction_latency_sec" type="double" value="0.06" />
     <param name="save_data_dir" type="str" value="~/FLYDRA" />
     <param name="camera_calibration" type="str" value="$(find ros_flydra)/calib/feb19flipx.xml" />
+    <param name=triggerbox_hardware_device" type="str" value="/dev/trig1" />
   </node>
 
 </launch>
