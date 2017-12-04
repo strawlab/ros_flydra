@@ -2,7 +2,7 @@
 
   <param name="flydra/main_brain" type="str" value="localhost" />
 
-  <node name="main_brain" pkg="ros_flydra" type="main_brain">
+  <node name="flydra_mainbrain" pkg="ros_flydra" type="main_brain">
     <param name="frames_per_second" type="double" value="100.0" />
     <param name="hypothesis_test_max_acceptable_error" type="double" value="50.0" />
     <param name="kalman_model" type="str" value="EKF mamarama, units: mm" />
