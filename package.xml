@@ -22,5 +22,6 @@
   <run_depend>python-opencv</run_depend>
   <run_depend>python-blist</run_depend>
   <run_depend>rosgobject</run_depend>
+  <run_depend>python-gi-cairo</run_depend>
 
 </package>
