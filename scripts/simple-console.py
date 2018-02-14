@@ -16,6 +16,12 @@ def sync_cameras():
     xx.call()
     rospy.sleep(1)
 
+def take_background():
+    print 'take background'
+    xx = rospy.ServiceProxy('/flydra_mainbrain/take_background', std_srvs.srv.Empty)
+    xx.call()
+    rospy.sleep(1)
+
 def stop_saving_hdf5():
     print 'stop saving HDF5'
     xx = rospy.ServiceProxy('/flydra_mainbrain/stop_saving_data', std_srvs.srv.Empty, persistent=True)
@@ -66,6 +72,8 @@ if __name__ == '__main__':
     parser.add_argument(
         '--sync-cameras', action='store_true')
     parser.add_argument(
+        '--take-background', action='store_true')
+    parser.add_argument(
         '--stop-saving-hdf5', action='store_true')
     parser.add_argument(
         '--start-saving-hdf5', action='store_true')
@@ -84,6 +92,8 @@ if __name__ == '__main__':
 
     if args.sync_cameras:
         sync_cameras()
+    if args.take_background:
+        take_background()
     if args.stop_saving_hdf5:
         stop_saving_hdf5()
     if args.start_saving_hdf5:
@@ -100,4 +110,3 @@ if __name__ == '__main__':
         publish_experiment_uuid()
 
     print 'done'
-
